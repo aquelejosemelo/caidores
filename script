@@ -1,0 +1,126 @@
+#Trabalho final - COB820
+#Jose Roberto de Melo Junior
+
+# Preparando pacotes e dados
+rm(list = ls())
+
+library(kohonen) #som
+library(ggplot2) #plots
+library(GGally) #plots
+library(RColorBrewer) #paletas definidas
+require(ggbiplot)
+
+setwd("C:/Users/User/Documents/Mestrado/COB820")
+
+# Definindo paletas
+
+contrast = c("#FA4925", "#22693E", "#D4D40F", "#2C4382", "#F0F0F0", "#3D3D3D") #my own, contrasting pairs
+kindofpretty = c("#B39B66", "#3B3828", "#FAE6B9", "#F2F2F2", "#86BA9F", "#135E1F", "#FFF70A", "#FFB10A", "#0498BD", "#FF780A") #my own
+kindofpretty2 = c("#B39B66", "#3B3828", "#FAE6B9", "#F2F2F2", "#F58B00", "#F5D800", "#7185A3", "#786187")
+
+cols <- brewer.pal(10, "Paired")
+#Similarely, but a color function that will be called upon from inside other functions. Easy to change to rainbow, etc.
+terraincolors = function(n, alpha = 1) {
+  terrain.colors(n, alpha=alpha)[n:1]
+}
+
+
+
+caidores_completo = read.csv("caidoresFinal.csv")
+names(caidores_completo) = c("Sujeito",
+                     "Idade",
+                     "FaixaEtaria",
+                     "Altura",
+                     "Genero",
+                     "Peso",
+                     "IMC",
+                     "ComprimentoPe",
+                     "FES_S_A",
+                     "FES_S_B",
+                     "IPAQ_S_A",
+                     "IPAQ_S_B",
+                     "AOpenFirm",
+                     "AClosedFirm",
+                     "AOpenFoam",
+                     "AClosedFoam")
+
+
+caidores_raw = caidores_completo[complete.cases(caidores_completo),]
+caidores = unique(caidores_raw[,-1])
+summary(caidores)
+
+# Efetuando PCA para verificarmos dimensionalidade
+
+caidores.pca = prcomp(caidores, center = TRUE, scale = TRUE)
+
+summary(caidores.pca)
+
+str(caidores.pca)
+
+ggbiplot(caidores.pca)
+
+ggpairs(caidores, title = "Dataset Completo")
+
+
+# Treinando o mapa
+caidores.sc = scale(caidores)
+
+caidores.grid = somgrid(xdim = 4, ydim = 4, topo = "hexagonal", toroidal =  TRUE)
+
+
+# Construindo o modelo
+set.seed(33)
+caidores.som = som(caidores.sc, grid = caidores.grid, rlen = 700, alpha = c(0.05,0.01), keep.data = TRUE)
+
+summary(caidores.som)
+
+
+# Progresso do Treinamento
+plot(caidores.som, type = "changes")
+
+# Observações nos nodos
+plot(caidores.som, type = "count")
+
+# Distancia dos vizinhos
+plot(caidores.som, type = "dist.neighbours", palette.name = grey.colors, shape = "straight")
+
+# Qualidalde
+plot(caidores.som, type="quality", shape = "straight")
+
+# Codes
+plot(caidores.som, type="codes", codeRendering = "segments")
+
+# Grafico de Mapeamento
+plot(caidores.som, type="mapping", border = "grey")
+
+colour1 = tricolor(caidores.som$grid)
+colour2 <- tricolor(caidores.som$grid, phi = c(pi/6, 0, -pi/6))
+plot(caidores.som, "mapping", bg = rgb(colour1))
+
+# Clustering #
+
+clusterdata = getCodes(caidores.som)
+wss = (nrow(clusterdata)-1)*sum(apply(clusterdata,2,var))
+for (i in 1:15) wss[i] <- sum(kmeans(clusterdata,
+                                     centers=i)$withinss)
+plot(1:15, wss, type="b", xlab="Number of Clusters", #match i
+     ylab="Within groups sum of squares", main="Within cluster sum of squares (WCSS)")
+
+#criando uma coluna com a lista dos cluster
+
+set.seed(33) #for reproducability
+fit_kmeans <- kmeans(clusterdata[,1:4], 4) #4
+cl_assignmentk <- fit_kmeans$cluster[caidores.som$unit.classif] 
+caidores$clustersKm <- cl_assignmentk #back to original data.
+
+DistanceM <- dist(clusterdata[,1:4], method = "euclidean") #cria matriz de distancias
+fit_hac <- hclust(DistanceM, method="ward.D2") #justa as disntancias. "D2", since "DistanceM" is not squared.
+plot(fit_hac) #display dendrogram.
+HACgroups <- cutree(fit_hac, k=4) # cut tree into k clusters
+# draw dendrogram with red borders around the 6 clusters 
+rect.hclust(fit_hac, k=4, border="grey")
+
+
+# Avaliando Cluster
+plot(caidores.som, type="mapping", bg = rgb(colour1), shape = "straight", border = "grey", labels = caidores[,16])
+add.cluster.boundaries(caidores.som, fit_kmeans$cluster, lwd = 3, lty = 2, col=contrast[4])
